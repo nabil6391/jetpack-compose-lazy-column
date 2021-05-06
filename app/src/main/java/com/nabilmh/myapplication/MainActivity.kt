@@ -1,10 +1,6 @@
 package com.nabilmh.myapplication
 
 import android.os.Bundle
-import android.view.ViewGroup.LayoutParams.MATCH_PARENT
-import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -16,8 +12,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,7 +24,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.MaterialTheme
-import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
@@ -42,16 +39,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.google.accompanist.glide.rememberGlidePainter
 import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.accompanist.pager.HorizontalPager
 import com.google.accompanist.pager.HorizontalPagerIndicator
 import com.google.accompanist.pager.rememberPagerState
 import com.nabilmh.myapplication.ui.theme.MyApplicationTheme
+import com.nabilmh.myapplication.ui.theme.Shimmer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val viewModel: HelloViewModel by viewModels()
@@ -71,51 +72,63 @@ class MainActivity : ComponentActivity() {
 
 
 class HelloViewModel : ViewModel() {
-    val _name = MutableLiveData("")
-    val name: LiveData<String> = _name
+    var projectsList = MutableLiveData<HomePageProjectListViewState>()
 
-    // onNameChange is an event we're defining that the UI can invoke
-    // (events flow up from UI)
-    fun onNameChange(newName: String) {
-        _name.value = newName
+    sealed class HomePageProjectListViewState {
+        object Loading : HomePageProjectListViewState()
+        object Loaded : HomePageProjectListViewState()
+        object NotAvailable : HomePageProjectListViewState()
+    }
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            projectsList.postValue(HomePageProjectListViewState.Loading)
+            delay(5000)
+            projectsList.postValue( HomePageProjectListViewState.Loaded)
+        }
     }
 }
 
 @OptIn(ExperimentalPagerApi::class)
 @Composable
 fun Greeting(model: HelloViewModel ) {
-    val name: State<String> = model.name.observeAsState("")
-    HelloContent(name = name.value, onNameChange = { model.onNameChange(it) })
-}
-
-
-@ExperimentalPagerApi
-@Composable
-fun HelloContent(name: String, onNameChange: (String) -> Unit) {
-    Column {
-        Text(
-            text = "Hello, $name",
-            modifier = Modifier.padding(bottom = 8.dp),
-            style = MaterialTheme.typography.h5
-        )
-        OutlinedTextField(
-            value = name,
-            onValueChange = onNameChange,
-            label = { Text("Name") }
-        )
+    val projectsLiveData = model.projectsList.observeAsState()
+    Column(modifier = Modifier.fillMaxSize()) {
         Spacer(modifier = Modifier.padding(top = 8.dp))
-        AnnouncementSection(name)
+        AnnouncementSection()
         Spacer(modifier = Modifier.padding(top = 8.dp))
         BannerSection(name = "asdas")
+        Spacer(modifier = Modifier.padding(top = 8.dp))
+        ProjectSection(state = projectsLiveData.value)
     }
 }
 
 @Composable
-fun AnnouncementSection(name: String) {
+fun ShimmerElement(modifier: Modifier) {
+    Row(
+        modifier = Modifier
+            .heightIn(min = 64.dp)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = modifier
+                .size(48.dp)
+                .clip(CircleShape)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(32.dp)
+        )
+    }
+}
 
-    Surface(color = Color(red = 185, green = 4,blue = 60)) {
+@Composable
+fun AnnouncementSection() {
+    Surface(color = Color(red = 185, green = 4,blue = 60), modifier = Modifier.fillMaxWidth()) {
         Column {
-//        val showHs  by remember { mutableStateOf(false) }
             Spacer(modifier = Modifier.padding(top = 8.dp))
             Text(
                 color = Color.White,
@@ -161,29 +174,26 @@ fun BannerSection(name: String) {
         modifier = Modifier
             .padding(16.dp),
     )
-
 }
 
+
+@ExperimentalPagerApi
 @Composable
-private fun PageIndicator(modifier: Modifier = Modifier, currentPage: Int, numberOfPages: Int) {
-    Row(modifier = modifier) {
-        repeat(times = numberOfPages) { page ->
-            val circleColor = if (page == currentPage) {
-                MaterialTheme.colors.onBackground
-            } else {
-                MaterialTheme.colors.onBackground
-            }
-            Box(
-                modifier = Modifier
-                    .padding(end = 8.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = circleColor)
-                    .size(8.dp)
-            )
+fun ProjectSection(state: HelloViewModel.HomePageProjectListViewState?) {
+    when(state) {
+        HelloViewModel.HomePageProjectListViewState.Loaded -> {
+           AnnouncementSection()
+        }
+        HelloViewModel.HomePageProjectListViewState.Loading -> {
+            Shimmer(elementHeight = 100.dp, content = {
+                ShimmerElement(modifier = it)
+            })
+        }
+        HelloViewModel.HomePageProjectListViewState.NotAvailable -> {
+            Text(text = "Empty")
         }
     }
 }
-
 
 @Composable
 fun ShimmerSample(modifier: Modifier = Modifier) {
