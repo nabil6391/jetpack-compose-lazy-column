@@ -1,12 +1,16 @@
 package com.nabilmh.myapplication
 
+import FlipClock
 import android.os.Bundle
+import android.os.SystemClock
+import android.text.format.DateUtils
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,31 +20,30 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.Icon
-import androidx.compose.material.IconButton
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
 import androidx.compose.material.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
-import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.accompanist.glide.rememberGlidePainter
@@ -52,7 +55,11 @@ import com.nabilmh.myapplication.ui.theme.MyApplicationTheme
 import com.nabilmh.myapplication.ui.theme.Shimmer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.ceil
+import kotlin.math.max
 
 class MainActivity : ComponentActivity() {
     private val viewModel: HelloViewModel by viewModels()
@@ -70,64 +77,111 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-
 class HelloViewModel : ViewModel() {
-    var projectsList = MutableLiveData<HomePageProjectListViewState>()
+    data class SectionItem(val id: String, var state: MutableStateFlow<ViewState> = MutableStateFlow(ViewState.Loading))
 
-    sealed class HomePageProjectListViewState {
-        object Loading : HomePageProjectListViewState()
-        object Loaded : HomePageProjectListViewState()
-        object NotAvailable : HomePageProjectListViewState()
+    var sectionList = mutableListOf<SectionItem>()
+
+    var endTime = SystemClock.uptimeMillis() + DateUtils.MINUTE_IN_MILLIS
+
+    sealed class ViewState {
+        object Loading : ViewState()
+        data class Loaded<T>(val data: T) : ViewState()
+        object NotAvailable : ViewState()
     }
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            projectsList.postValue(HomePageProjectListViewState.Loading)
+            sectionList.add(SectionItem("A"))
+            sectionList.add(SectionItem("B"))
+            sectionList.add(SectionItem("C"))
+            sectionList.add(SectionItem("D"))
             delay(5000)
-            projectsList.postValue( HomePageProjectListViewState.Loaded)
+
+            sectionList.firstOrNull { it.id == "A" }?.state?.value = ViewState.Loaded(listOf("A"))
+
+            endTime = SystemClock.uptimeMillis() + DateUtils.MINUTE_IN_MILLIS
+            sectionList.firstOrNull { it.id == "B" }?.state?.value = ViewState.Loaded(endTime)
         }
     }
 }
 
 @OptIn(ExperimentalPagerApi::class)
 @Composable
-fun Greeting(model: HelloViewModel ) {
-    val projectsLiveData = model.projectsList.observeAsState()
-    Column(modifier = Modifier.fillMaxSize()) {
-        Spacer(modifier = Modifier.padding(top = 8.dp))
-        AnnouncementSection()
-        Spacer(modifier = Modifier.padding(top = 8.dp))
-        BannerSection(name = "asdas")
-        Spacer(modifier = Modifier.padding(top = 8.dp))
-        ProjectSection(state = projectsLiveData.value)
+fun Greeting(model: HelloViewModel) {
+    LazyColumn(modifier = Modifier.fillMaxHeight()) {
+        items(count = model.sectionList.size, itemContent = { item ->
+            val sectionItem = model.sectionList[item]
+            Log.d("COMPOSE", "This get rendered $item ${sectionItem.id}")
+            when (sectionItem.id) {
+                "A" -> {
+                    val projectsLiveData = sectionItem.state.collectAsState()
+                    ProjectSection(state = projectsLiveData.value)
+                }
+                "B" -> {
+                    val stateData = sectionItem.state.collectAsState()
+                    Flipper(stateData.value)
+                }
+                "C" -> {
+                    Spacer(modifier = Modifier.padding(top = 8.dp))
+                    AnnouncementSection()
+                }
+                "D" -> {
+                    Spacer(modifier = Modifier.padding(top = 8.dp))
+                    BannerSection(name = "asdas")
+                }
+                else -> {
+
+                }
+            }
+        })
     }
 }
 
 @Composable
-fun ShimmerElement(modifier: Modifier) {
-    Row(
-        modifier = Modifier
-            .heightIn(min = 64.dp)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = modifier
-                .size(48.dp)
-                .clip(CircleShape)
-        )
-        Spacer(modifier = Modifier.width(16.dp))
-        Box(
-            modifier = modifier
-                .fillMaxWidth()
-                .height(32.dp)
-        )
+fun Flipper(state: HelloViewModel.ViewState?) {
+    when (state) {
+        HelloViewModel.ViewState.Loading -> {
+            Shimmer(elementHeight = 100.dp, content = {
+                ShimmerElement(modifier = it)
+            })
+        }
+        is HelloViewModel.ViewState.Loaded<*> -> {
+            val endTime: Long = state.data as Long
+            var remainingSeconds by remember { mutableStateOf(0) }
+
+            fun updateRemainingTime() {
+                remainingSeconds = ceil(max(endTime - SystemClock.uptimeMillis(), 0L).toFloat() / 1000F).toInt()
+            }
+
+            LaunchedEffect(Unit) {
+                withContext(Dispatchers.Main) {
+                    updateRemainingTime()
+                    while (remainingSeconds > 0) {
+                        updateRemainingTime()
+                        delay(400L)
+                        Log.d("log", "Countdown  $endTime $remainingSeconds")
+                    }
+                }
+            }
+
+            if (remainingSeconds == 0) {
+                Spacer(modifier = Modifier)
+            } else {
+                FlipClock(seconds = remainingSeconds)
+            }
+        }
+        HelloViewModel.ViewState.NotAvailable -> {
+            Text(text = "Empty")
+        }
     }
+
 }
+
 
 @Composable
 fun AnnouncementSection() {
-    Surface(color = Color(red = 185, green = 4,blue = 60), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = Color(red = 185, green = 4, blue = 60), modifier = Modifier.fillMaxWidth()) {
         Column {
             Spacer(modifier = Modifier.padding(top = 8.dp))
             Text(
@@ -179,30 +233,41 @@ fun BannerSection(name: String) {
 
 @ExperimentalPagerApi
 @Composable
-fun ProjectSection(state: HelloViewModel.HomePageProjectListViewState?) {
-    when(state) {
-        HelloViewModel.HomePageProjectListViewState.Loaded -> {
-           AnnouncementSection()
-        }
-        HelloViewModel.HomePageProjectListViewState.Loading -> {
+fun ProjectSection(state: HelloViewModel.ViewState?) {
+    when (state) {
+        HelloViewModel.ViewState.Loading -> {
             Shimmer(elementHeight = 100.dp, content = {
                 ShimmerElement(modifier = it)
             })
         }
-        HelloViewModel.HomePageProjectListViewState.NotAvailable -> {
+        is HelloViewModel.ViewState.Loaded<*> -> {
+            AnnouncementSection()
+        }
+        HelloViewModel.ViewState.NotAvailable -> {
             Text(text = "Empty")
         }
     }
 }
 
 @Composable
-fun ShimmerSample(modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        repeat(3) {
-            PlaceHolder()
-            Spacer(modifier = Modifier.height(20.dp))
-
-        }
+fun ShimmerElement(modifier: Modifier) {
+    Row(
+        modifier = Modifier
+            .heightIn(min = 64.dp)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = modifier
+                .size(48.dp)
+                .clip(CircleShape)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(32.dp)
+        )
     }
 }
 
@@ -236,40 +301,6 @@ fun ImagePlaceHolder() {
     Box(modifier = Modifier
         .size(110.dp)
         .background(color = Color.LightGray))
-}
-
-@OptIn(ExperimentalAnimationApi::class)
-@Composable
-fun CountdownTime(running: Boolean, timeInMillis: Long) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column {
-            Text((timeInMillis / 60_000).toString().padStart(2, '0'), style = MaterialTheme.typography.h2, fontWeight = FontWeight.Bold)
-        }
-        Text(":", style = MaterialTheme.typography.h2, fontWeight = FontWeight.Bold)
-        Column {
-            Text(((timeInMillis % 60_000) / 1000).toString().padStart(2, '0'), style = MaterialTheme.typography.h2, fontWeight = FontWeight.Bold)
-        }
-        Text(((timeInMillis % 60_000) % 1000).toString().padStart(3, '0'), style = MaterialTheme.typography.h4, modifier = Modifier.offset(y = 10.dp))
-    }
-}
-
-@Composable
-fun TimeArrow(up: Boolean, onClick: () -> Unit) {
-    IconButton(
-        onClick = onClick,
-        modifier = Modifier
-            .width(75.dp)
-            .height(75.dp)
-    ) {
-        Icon(
-            imageVector = if (up) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-            contentDescription = null,
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(),
-            tint = MaterialTheme.colors.secondary
-        )
-    }
 }
 
 @Preview(showBackground = true)
